@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 
 namespace ZeroCopyPointCreation
 {
-    public static class GPUComputePoints
+    public static class GPUComputePointsFaster
     {
         private static bool _initialized = false;
         private static ComputePlatform _integratedIntelGPUPlatform;
@@ -16,11 +16,11 @@ namespace ZeroCopyPointCreation
         private static ComputeCommandQueue _commandQueue;
         private static ComputeProgram _program;
         private static ComputeKernel _kernel;
-        private static ComputeBuffer<ushort> _inputBuffer;
-        private static ComputeBuffer<Point3D> _outputBuffer;
-        private static Point3D[] _ret;
 
-        private static void OneTimeSetup(CameraFrame frame)
+        private static ushort[] _frameData;
+        private static ComputeBuffer<ushort> _inputBuffer; 
+
+        private static void OneTimeSetup(CameraFrame frame, float[] M, float[] b)
         {
             if(!_initialized)
             {
@@ -53,33 +53,39 @@ namespace ZeroCopyPointCreation
                 _program.Build(null, null, null, IntPtr.Zero);
                 _kernel = _program.CreateKernel("ComputePoints");
 
+                _initialized = true;
+
+                _frameData = new ushort[frame.RawData.Length];
                 _inputBuffer = new ComputeBuffer<ushort>(_context,
-                    ComputeMemoryFlags.ReadOnly | ComputeMemoryFlags.CopyHostPointer,
-                    frame.RawData);
+                    ComputeMemoryFlags.ReadOnly | ComputeMemoryFlags.UseHostPointer,
+                    _frameData);
                 _kernel.SetMemoryArgument(0, _inputBuffer);
-
-                _ret = new Point3D[frame.Width * frame.Height];
-                _outputBuffer = new ComputeBuffer<Point3D>(_context,
-                    ComputeMemoryFlags.WriteOnly | ComputeMemoryFlags.UseHostPointer,
-                    _ret);
-                _kernel.SetMemoryArgument(1, _outputBuffer);
-
-                _initialized = true; 
             }
         }
 
         public static Point3D[] ComputePoints(CameraFrame frame, float[] M, float[] b)
         {
-            OneTimeSetup(frame);
+            OneTimeSetup(frame, M, b);
 
-            IntPtr retPtr2 = _commandQueue.Map(
+            IntPtr frameDataPtr = _commandQueue.Map(
                 _inputBuffer,
                 true,
                 ComputeMemoryMappingFlags.Write,
                 0,
-                frame.RawData.Length, null);
+                _frameData.Length, null);
 
-            _commandQueue.Unmap(_inputBuffer, ref retPtr2, null);
+            for(int c=0;c<frame.Height*frame.Width;c++)
+            {
+                _frameData[c] = frame.RawData[c]; 
+            }
+
+            _commandQueue.Unmap(_inputBuffer, ref frameDataPtr, null);
+
+            Point3D[] ret = new Point3D[frame.Width * frame.Height]; 
+            ComputeBuffer<Point3D> outputBuffer = new ComputeBuffer<Point3D>(_context,
+                ComputeMemoryFlags.WriteOnly | ComputeMemoryFlags.UseHostPointer,
+                ret);
+            _kernel.SetMemoryArgument(1, outputBuffer);
 
             ComputeBuffer<float> mBuffer = new ComputeBuffer<float>(_context,
                 ComputeMemoryFlags.ReadOnly | ComputeMemoryFlags.CopyHostPointer,
@@ -98,18 +104,19 @@ namespace ZeroCopyPointCreation
                 null, null);
 
             IntPtr retPtr = _commandQueue.Map(
-                _outputBuffer,
+                outputBuffer,
                 true,
                 ComputeMemoryMappingFlags.Read,
                 0,
-                _ret.Length, null);
+                ret.Length, null);
 
-            _commandQueue.Unmap(_outputBuffer, ref retPtr, null);
+            _commandQueue.Unmap(outputBuffer, ref retPtr, null);
 
+            outputBuffer.Dispose();
             mBuffer.Dispose();
             bBuffer.Dispose(); 
 
-            return _ret; 
+            return ret; 
         }
     }
 }

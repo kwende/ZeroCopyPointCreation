@@ -11,14 +11,20 @@ namespace ZeroCopyPointCreation
         const int Width = 512;
         const int Height = 424;
 
-        public static CameraFrame GetNextFrame()
+        public static CameraFrame GetNextFrame(ushort[] reuse)
         {
             Random rand = new Random(1234);
+
+            if(reuse==null)
+            {
+                reuse = new ushort[Width * Height]; 
+            }
+
             CameraFrame ret = new CameraFrame()
             {
                 Width = Width,
                 Height = Height,
-                RawData = new ushort[Width * Height]
+                RawData = reuse
             };
             for (int c = 0; c < Width * Height; c++)
             {

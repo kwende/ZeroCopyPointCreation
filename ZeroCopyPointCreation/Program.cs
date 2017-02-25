@@ -18,6 +18,8 @@ namespace ZeroCopyPointCreation
             Stopwatch cpuSw = new Stopwatch();
             Stopwatch gpuSw = new Stopwatch();
 
+            ushort[] reuseBuffer = new ushort[512 * 424];
+
             Random rand = new Random();
             for (int c = 0; c < NumberOfIterations; c++)
             {
@@ -34,7 +36,7 @@ namespace ZeroCopyPointCreation
                     sillyM[d * 3 + 2] = rand.Next() % 10 + 1;
                 }
 
-                CameraFrame currentFrame = MockCamera.GetNextFrame();
+                CameraFrame currentFrame = MockCamera.GetNextFrame(reuseBuffer);
 
                 // increment performance stats for GPU point computation. 
                 gpuSw.Start();
